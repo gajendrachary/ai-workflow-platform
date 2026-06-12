@@ -15,7 +15,11 @@ jobs:
 
       - name: Repository scaffold check
         run: |
-          test -f README.md
-          test -f .env.example
-          test -f docs/vision.md
-          test -f docs/architecture.md
+          test -f README.md && echo "README.md exists" || (echo "README.md missing" && exit 1)
+          test -f .env.example && echo ".env.example exists" || (echo ".env.example missing" && exit 1)
+          test -f .gitignore && echo ".gitignore exists" || (echo ".gitignore missing" && exit 1)
+          test -f LICENSE && echo "LICENSE exists" || (echo "LICENSE missing" && exit 1)
+          test -f CONTRIBUTING.md && echo "CONTRIBUTING.md exists" || (echo "CONTRIBUTING.md missing" && exit 1)
+          test -f docs/vision.md && echo "docs/vision.md exists" || (echo "docs/vision.md missing" && exit 1)
+          test -f docs/architecture.md && echo "docs/architecture.md exists" || (echo "docs/architecture.md missing" && exit 1)
+          echo "All scaffold files verified successfully!"
