@@ -1,0 +1,287 @@
+// Prisma Schema - AI Workflow Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ORGANIZATION & USERS ───────────────────────────────────────────
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users             User[]
+  projects          Project[]
+  candidates        Candidate[]
+  invoices          Invoice[]
+  workflowDefs      WorkflowDefinition[]
+  workflowInstances WorkflowInstance[]
+  documents         Document[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String
+  email          String       @unique
+  passwordHash   String
+  role           UserRole     @default(MEMBER)
+  organizationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id])
+  assignedApprovals ApprovalRequest[]  @relation("AssignedApprovals")
+  requestedApprovals ApprovalRequest[] @relation("RequestedApprovals")
+  managedProjects   Project[]          @relation("ProjectManager")
+  createdWorkflows  WorkflowInstance[] @relation("WorkflowCreator")
+
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+// ─── WORKFLOW ENGINE ────────────────────────────────────────────────
+
+model WorkflowDefinition {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  steps        WorkflowStep[]
+  instances    WorkflowInstance[]
+
+  @@map("workflow_definitions")
+}
+
+model WorkflowStep {
+  id           String          @id @default(cuid())
+  name         String
+  type         WorkflowStepType
+  order        Int
+  assigneeRole UserRole?
+  definitionId String
+
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id])
+
+  @@map("workflow_steps")
+}
+
+enum WorkflowStepType {
+  TASK
+  APPROVAL
+  NOTIFICATION
+  AI_ACTION
+}
+
+model WorkflowInstance {
+  id             String         @id @default(cuid())
+  definitionId   String
+  status         WorkflowStatus @default(ACTIVE)
+  currentStepId  String?
+  organizationId String
+  createdBy      String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  definition   WorkflowDefinition @relation(fields: [definitionId], references: [id])
+  organization Organization       @relation(fields: [organizationId], references: [id])
+  creator      User               @relation("WorkflowCreator", fields: [createdBy], references: [id])
+  approvals    ApprovalRequest[]
+  activityLogs ActivityLog[]
+
+  @@map("workflow_instances")
+}
+
+enum WorkflowStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+// ─── APPROVALS ──────────────────────────────────────────────────────
+
+model ApprovalRequest {
+  id                 String         @id @default(cuid())
+  workflowInstanceId String
+  stepId             String
+  requestedBy        String
+  assignedTo         String
+  status             ApprovalStatus @default(PENDING)
+  comment            String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  workflowInstance WorkflowInstance @relation(fields: [workflowInstanceId], references: [id])
+  requester        User             @relation("RequestedApprovals", fields: [requestedBy], references: [id])
+  assignee         User             @relation("AssignedApprovals", fields: [assignedTo], references: [id])
+
+  @@map("approval_requests")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─── HIRING ─────────────────────────────────────────────────────────
+
+model Candidate {
+  id             String          @id @default(cuid())
+  name           String
+  email          String
+  role           String
+  status         CandidateStatus @default(APPLIED)
+  organizationId String
+  resumeUrl      String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("candidates")
+}
+
+enum CandidateStatus {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  HIRED
+  REJECTED
+}
+
+// ─── PROJECTS ───────────────────────────────────────────────────────
+
+model Project {
+  id             String        @id @default(cuid())
+  name           String
+  description    String?
+  status         ProjectStatus @default(PLANNING)
+  organizationId String
+  managerId      String
+  startDate      DateTime?
+  endDate        DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  manager      User         @relation("ProjectManager", fields: [managerId], references: [id])
+  tasks        Task[]
+  invoices     Invoice[]
+
+  @@map("projects")
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  projectId   String
+  dueDate     DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+// ─── BILLING ────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String        @id @default(cuid())
+  projectId      String
+  organizationId String
+  amount         Float
+  currency       String        @default("INR")
+  status         InvoiceStatus @default(DRAFT)
+  dueDate        DateTime?
+  paidAt         DateTime?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("invoices")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ─── DOCUMENTS ──────────────────────────────────────────────────────
+
+model Document {
+  id             String   @id @default(cuid())
+  name           String
+  fileUrl        String
+  mimeType       String
+  organizationId String
+  uploadedBy     String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("documents")
+}
+
+// ─── ACTIVITY LOG ───────────────────────────────────────────────────
+
+model ActivityLog {
+  id                 String   @id @default(cuid())
+  action             String
+  entity             String
+  entityId           String
+  performedBy        String
+  workflowInstanceId String?
+  metadata           Json?
+  createdAt          DateTime @default(now())
+
+  workflowInstance WorkflowInstance? @relation(fields: [workflowInstanceId], references: [id])
+
+  @@map("activity_logs")
+}
